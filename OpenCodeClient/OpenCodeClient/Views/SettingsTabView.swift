@@ -340,6 +340,7 @@ struct SettingsTabView: View {
                 }
             }
             .navigationTitle(L10n.t(.settingsTitle))
+            .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 sshConfig = state.sshTunnelManager.config
                 _ = try? state.sshTunnelManager.generateOrGetPublicKey()

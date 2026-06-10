@@ -4,14 +4,16 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct SessionListView: View {
     @Bindable var state: AppState
-    @Environment(\.dismiss) private var dismiss
     @State private var pendingDeleteSession: Session?
     @State private var deletingSessionID: String?
     @State private var deleteError: String?
-    @State private var showCreateDisabledAlert = false
+    @State private var showCreateInfoAlert = false
 
     var body: some View {
         NavigationStack {
@@ -22,6 +24,7 @@ struct SessionListView: View {
                         systemImage: "bubble.left.and.bubble.right",
                         description: Text(L10n.t(.sessionsEmptyDescription))
                     )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List {
                         sessionNodes(state.sessionTree)
@@ -40,43 +43,42 @@ struct SessionListView: View {
                                 .onAppear {
                                     Task { await state.loadMoreSessions() }
                                 }
-                                .id("load-more-\(lastSessionID)")
+                            .id("load-more-\(lastSessionID)")
                         }
                     }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .background(Color(.systemGroupedBackground))
                     .accessibilityIdentifier("session-list")
                     .refreshable {
                         await state.refreshSessions()
                     }
                 }
             }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle(L10n.t(.sessionsTitle))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.t(.sessionsClose)) { dismiss() }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    HStack(spacing: 8) {
-                        Button {
-                            Task {
-                                await state.createSession()
-                                dismiss()
-                            }
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                        }
-                        .disabled(!state.canCreateSession)
-                        .foregroundColor(state.canCreateSession ? .accentColor : .gray)
-
-                        if !state.canCreateSession {
-                            Button {
-                                showCreateDisabledAlert = true
-                            } label: {
-                                Image(systemName: "info.circle")
-                            }
-                            .foregroundColor(.secondary)
-                        }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showCreateInfoAlert = true
+                    } label: {
+                        Image(systemName: "info.circle")
                     }
+                    .foregroundColor(.secondary)
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task {
+                            await state.createSession()
+                            state.selectedTab = 1
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .disabled(!state.canCreateSession)
+                    .foregroundColor(state.canCreateSession ? .accentColor : .gray)
                 }
             }
         }
@@ -113,14 +115,16 @@ struct SessionListView: View {
         .task {
             await state.refreshSessions()
         }
-        .alert(L10n.t(.chatCreateDisabledHint), isPresented: $showCreateDisabledAlert) {
+        .alert(L10n.t(.sessionsTitle), isPresented: $showCreateInfoAlert) {
             Button(L10n.t(.commonOk)) {}
+        } message: {
+            Text(state.canCreateSession ? L10n.t(.sessionsEmptyDescription) : state.createSessionDisabledHint)
         }
     }
 
     private func selectSession(_ session: Session) {
         state.selectSession(session)
-        dismiss()
+        state.selectedTab = 1
     }
 
     private func sessionNodes(_ nodes: [SessionNode], depth: Int = 0) -> AnyView {
@@ -140,6 +144,9 @@ struct SessionListView: View {
                     onSelect: { selectSession(session) },
                     onToggleCollapse: { state.toggleSessionExpanded(session.id) }
                 )
+                .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     Button {
                         pendingDeleteSession = session
@@ -187,37 +194,64 @@ struct SessionRowView: View {
         return status.type == "busy" || status.type == "retry"
     }
 
+    private var rowAccent: Color {
+        if isSelected { return .accentColor }
+        guard let status else { return .secondary }
+        return statusColor(status)
+    }
+
+    private var rowIndent: CGFloat {
+        CGFloat(min(max(depth, 0), 2)) * 14
+    }
+
     var body: some View {
-        HStack {
+        HStack(spacing: 10) {
+            if rowIndent > 0 {
+                Color.clear
+                    .frame(width: rowIndent)
+                    .accessibilityHidden(true)
+            }
+
             if hasChildren {
                 Button {
                     onToggleCollapse?()
                 } label: {
                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.caption)
+                        .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .frame(width: 12)
+                .frame(width: 14)
                 .accessibilityIdentifier("session-toggle-\(session.id)")
             } else {
                 Color.clear
-                    .frame(width: 12)
+                    .frame(width: 14)
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(rowAccent.opacity(isSelected ? 0.16 : 0.11))
+                    .frame(width: 34, height: 34)
+
+                Image(systemName: hasChildren ? "bubble.left.and.bubble.right.fill" : "bubble.left.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(rowAccent)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
                 Text(session.title.isEmpty ? L10n.t(.sessionsUntitled) : session.title)
-                    .font(depth > 0 ? .subheadline : .headline)
-                    .foregroundStyle(depth > 0 ? Color.secondary : (isBusy ? Color.blue : Color.primary))
+                    .font(depth > 0 ? .footnote.weight(.semibold) : .subheadline.weight(.semibold))
+                    .foregroundStyle(isBusy ? Color.blue : Color.primary)
+                    .lineLimit(1)
 
                 HStack(spacing: 8) {
                     Text(formattedDate(session.time.updated))
-                        .font(.caption)
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
 
                     if let status {
                         Text(statusLabel(status))
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundStyle(statusColor(status))
                     }
                 }
@@ -233,14 +267,21 @@ struct SessionRowView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 4)
-        .padding(.leading, CGFloat(depth) * 24)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isSelected ? Color.accentColor.opacity(0.08) : Color(.secondarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(isSelected ? Color.accentColor.opacity(0.22) : Color(.separator).opacity(0.18), lineWidth: 0.5)
+        )
         .contentShape(Rectangle())
         .onTapGesture {
             guard !isDeleting else { return }
             onSelect()
         }
-        .listRowBackground(isSelected ? Color.blue.opacity(0.08) : Color.clear)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("session-row-\(session.id)")
     }

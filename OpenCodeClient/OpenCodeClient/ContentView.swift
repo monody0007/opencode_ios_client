@@ -78,7 +78,7 @@ struct ContentView: View {
             set: { newValue, _ in
                 state.fileToOpenInFilesTab = newValue?.path
                 if newValue == nil, !useSplitLayout {
-                    state.selectedTab = 0
+                    state.selectedTab = 1
                 }
             }
         )
@@ -146,7 +146,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: state.selectedTab) { oldTab, newTab in
-            if oldTab == 2 && newTab != 2 {
+            if oldTab == 3 && newTab != 3 {
                 Task { await state.refresh() }
             }
         }
@@ -157,7 +157,7 @@ struct ContentView: View {
                         ToolbarItem(placement: .cancellationAction) {
                             Button(L10n.t(.appClose)) {
                                 state.fileToOpenInFilesTab = nil
-                                if !useSplitLayout { state.selectedTab = 0 }
+                                if !useSplitLayout { state.selectedTab = 1 }
                             }
                         }
                     }
@@ -177,23 +177,27 @@ struct ContentView: View {
         }
     }
 
-    /// iPhone：Tab Bar 三 Tab
+    /// iPhone：Tab Bar 四 Tab（Sessions / Chat / Files / Settings）
     private var tabLayout: some View {
         TabView(selection: Binding(
             get: { state.selectedTab },
             set: { state.selectedTab = $0 }
         )) {
+            SessionListView(state: state)
+                .tabItem { Label(L10n.t(.sessionsTitle), systemImage: "list.bullet.rectangle") }
+                .tag(0)
+
             ChatTabView(state: state)
                 .tabItem { Label(L10n.t(.appChat), systemImage: "bubble.left.and.bubble.right") }
-                .tag(0)
+                .tag(1)
 
             FilesTabView(state: state)
                 .tabItem { Label(L10n.t(.navFiles), systemImage: "folder") }
-                .tag(1)
+                .tag(2)
 
             SettingsTabView(state: state)
                 .tabItem { Label(L10n.t(.navSettings), systemImage: "gear") }
-                .tag(2)
+                .tag(3)
         }
     }
 

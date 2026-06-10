@@ -65,7 +65,9 @@ final class OpenCodeClientUITests: XCTestCase {
         app.launchArguments.append("UITEST_SESSION_TREE_FIXTURE")
         app.launch()
 
-        app.buttons["chat-toolbar-session-list"].tap()
+        let sessionsTab = app.tabBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(sessionsTab.waitForExistence(timeout: 8), "Sessions tab 应可见")
+        sessionsTab.tap()
 
         XCTAssertTrue(app.staticTexts["Root Session"].waitForExistence(timeout: 8), "Root session 应可见")
         XCTAssertTrue(app.staticTexts["Child Session"].waitForExistence(timeout: 8), "Child session 应可见，避免回归到 root-only 列表")

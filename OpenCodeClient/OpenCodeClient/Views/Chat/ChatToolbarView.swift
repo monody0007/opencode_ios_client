@@ -4,18 +4,17 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct ChatToolbarView: View {
     @Bindable var state: AppState
-    @Binding var showSessionList: Bool
     @Binding var showRenameAlert: Bool
     @Binding var renameText: String
     var showSettingsInToolbar: Bool
     var onSettingsTap: (() -> Void)?
-    
-    @State private var showCreateDisabledAlert = false
-    @Environment(\.horizontalSizeClass) private var sizeClass
-    
+
     private var useCompactLabels: Bool {
 #if canImport(UIKit)
         return UIDevice.current.userInterfaceIdiom == .phone
@@ -23,97 +22,119 @@ struct ChatToolbarView: View {
         return false
 #endif
     }
-    
-    var body: some View {
-        HStack {
-            sessionButtons
-            Spacer()
-            rightButtons
-        }
-        .padding(.horizontal, LayoutConstants.Spacing.spacious)
-        .padding(.vertical, LayoutConstants.MessageList.verticalPadding)
-    }
-    
-    // MARK: - Session Operation Buttons
-    private var sessionButtons: some View {
-        HStack(spacing: LayoutConstants.Toolbar.buttonSpacing) {
-            Button {
-                showSessionList = true
-            } label: {
-                Image(systemName: "list.bullet.circle.fill")
-                    .font(.title3)
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundColor(.accentColor)
-            }
-            .accessibilityIdentifier("chat-toolbar-session-list")
-            
-            Button {
-                renameText = state.currentSession?.title ?? ""
-                showRenameAlert = true
-            } label: {
-                Image(systemName: "pencil.circle.fill")
-                    .font(.title3)
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundColor(.accentColor)
-            }
-            
-            Button {
-                Task { await state.createSession() }
-            } label: {
-                Image(systemName: "plus.circle.fill")
-                    .font(.title3)
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundColor(state.canCreateSession ? .accentColor : .gray)
-            }
-            .disabled(!state.canCreateSession)
-            .accessibilityIdentifier("chat-toolbar-create-session")
 
-            if !state.canCreateSession {
-                Button {
-                    showCreateDisabledAlert = true
-                } label: {
-                    Image(systemName: "info.circle")
-                        .font(.title3)
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .alert(L10n.t(.chatCreateDisabledHint), isPresented: $showCreateDisabledAlert) {
-            Button(L10n.t(.commonOk)) {}
-        }
+    private var currentTitle: String {
+        let title = state.currentSession?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return title.isEmpty ? L10n.t(.appChat) : title
     }
-    
-    // MARK: - Right Side Buttons (Model + Agent + Settings)
+
+    private var titleMaxWidth: CGFloat {
+        useCompactLabels ? 150 : 280
+    }
+
+    private var modelLabelMaxWidth: CGFloat {
+        useCompactLabels ? 82 : 180
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            titleEditButton
+                .layoutPriority(1)
+
+            Spacer(minLength: 0)
+
+            Text(currentTitle)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: titleMaxWidth)
+                .accessibilityIdentifier("chat-title")
+
+            Spacer(minLength: 0)
+
+            rightButtons
+                .layoutPriority(1)
+        }
+        .frame(minHeight: 38)
+        .padding(.horizontal, LayoutConstants.Spacing.comfortable)
+        .padding(.vertical, 6)
+        .background(.bar)
+    }
+
+    private var titleEditButton: some View {
+        Button {
+            renameText = state.currentSession?.title ?? ""
+            showRenameAlert = true
+        } label: {
+            Image(systemName: "pencil.circle")
+                .font(.body)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundColor(.accentColor)
+                .frame(width: 34, height: 34)
+        }
+        .buttonStyle(.plain)
+    }
+
     private var rightButtons: some View {
         HStack(spacing: LayoutConstants.Toolbar.modelButtonSpacing) {
-            modelMenu
-            agentMenu
             ContextUsageButton(state: state)
-            
+            modelMenu
+
             if showSettingsInToolbar, let onSettingsTap {
                 Button {
                     onSettingsTap()
                 } label: {
                     Image(systemName: "gear")
-                        .font(.title3)
+                        .font(.body)
                         .symbolRenderingMode(.hierarchical)
                 }
+                .frame(width: 34, height: 34)
             }
         }
     }
-    
-    // MARK: - Model Selection Menu
+
     private var modelMenu: some View {
         Menu {
-            ForEach(Array(state.modelPresets.enumerated()), id: \.element.id) { index, preset in
-                Button {
-                    state.setSelectedModelIndex(index)
-                } label: {
-                    HStack {
-                        Text(preset.displayName)
-                        if state.selectedModelIndex == index {
-                            Image(systemName: "checkmark")
+            Section("Model") {
+                ForEach(Array(state.modelPresets.enumerated()), id: \.element.id) { index, preset in
+                    Button {
+                        state.setSelectedModelIndex(index)
+                    } label: {
+                        HStack {
+                            Text(preset.displayName)
+                            if state.selectedModelIndex == index {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            }
+
+            Section("Agent") {
+                if state.isLoadingAgents {
+                    ProgressView()
+                } else if state.visibleAgents.isEmpty {
+                    Text("No agents available")
+                } else {
+                    ForEach(Array(state.visibleAgents.enumerated()), id: \.element.id) { index, agent in
+                        Button {
+                            state.setSelectedAgentIndex(index)
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(agent.shortName)
+                                    if !useCompactLabels, let desc = agent.description, !desc.isEmpty {
+                                        Text(desc)
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                if state.selectedAgentIndex == index {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
                         }
                     }
                 }
@@ -121,61 +142,20 @@ struct ChatToolbarView: View {
         } label: {
             HStack(spacing: 4) {
                 Text(useCompactLabels ? (state.selectedModel?.shortName ?? "Model") : (state.selectedModel?.displayName ?? "Model"))
-                    .font(.caption.weight(.semibold))
+                    .font(.caption2.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: modelLabelMaxWidth)
                 Image(systemName: "chevron.down")
                     .font(.caption2)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             .background(Color.accentColor.gradient)
             .foregroundColor(.white)
             .clipShape(Capsule())
         }
         .menuStyle(.borderlessButton)
-    }
-    
-    // MARK: - Agent Selection Menu
-    private var agentMenu: some View {
-        Menu {
-            if state.isLoadingAgents {
-                ProgressView()
-            } else if state.visibleAgents.isEmpty {
-                Text("No agents available")
-            } else {
-                ForEach(Array(state.visibleAgents.enumerated()), id: \.element.id) { index, agent in
-                    Button {
-                        state.setSelectedAgentIndex(index)
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(agent.shortName)
-                                if !useCompactLabels, let desc = agent.description, !desc.isEmpty {
-                                    Text(desc)
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(1)
-                                }
-                            }
-                            if state.selectedAgentIndex == index {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Text(useCompactLabels ? (state.selectedAgent?.shortName ?? "Agent") : (state.selectedAgent?.name ?? "Agent"))
-                    .font(.caption.weight(.semibold))
-                Image(systemName: "chevron.down")
-                    .font(.caption2)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(Color(.systemGray5))
-            .foregroundColor(.secondary)
-            .clipShape(Capsule())
-        }
-        .menuStyle(.borderlessButton)
+        .accessibilityLabel("\(state.selectedModel?.displayName ?? "Model"), \(state.selectedAgent?.shortName ?? "Agent")")
     }
 }
